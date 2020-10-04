@@ -21,14 +21,14 @@ namespace GlobalRootSignatureParams {
         AccelerationStructureSlot,
         SceneConstantSlot,
         VertexBuffersSlot,
-        Count 
+        Count
     };
 }
 
 namespace LocalRootSignatureParams {
     enum Value {
         CubeConstantSlot = 0,
-        Count 
+        Count
     };
 }
 
@@ -63,7 +63,7 @@ private:
     };
     AlignedSceneConstantBuffer*  m_mappedConstantData;
     ComPtr<ID3D12Resource>       m_perFrameConstants;
-        
+
     // DirectX Raytracing (DXR) attributes
     ComPtr<ID3D12Device5> m_dxrDevice;
     ID3D12GraphicsCommandList5* m_dxrCommandList;
@@ -77,7 +77,7 @@ private:
     ComPtr<ID3D12DescriptorHeap> m_descriptorHeap;
     UINT m_descriptorsAllocated;
     UINT m_descriptorSize;
-    
+
     // Raytracing scene
     SceneConstantBuffer m_sceneCB[FrameCount];
     CubeConstantBuffer m_cubeCB;
@@ -109,7 +109,7 @@ private:
     ComPtr<ID3D12Resource> m_missShaderTable;
     ComPtr<ID3D12Resource> m_hitGroupShaderTable;
     ComPtr<ID3D12Resource> m_rayGenShaderTable;
-    
+
     // Library subobjects
     static const wchar_t*  c_globalRootSignatureName;
     static const wchar_t*  c_localRootSignatureName;

@@ -97,7 +97,7 @@ void D3D12RaytracingLibrarySubobjects::InitializeScene()
     // Setup camera.
     {
         // Initialize the view and projection inverse matrices.
-        m_eye = { 0.0f, 2.0f, -5.0f, 1.0f };
+        m_eye = { 0.0f, 0.0f, -5.0f, 1.0f };
         m_at = { 0.0f, 0.0f, 0.0f, 1.0f };
         XMVECTOR right = { 1.0f, 0.0f, 0.0f, 0.0f };
 
@@ -108,7 +108,7 @@ void D3D12RaytracingLibrarySubobjects::InitializeScene()
         XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(45.0f));
         m_eye = XMVector3Transform(m_eye, rotate);
         m_up = XMVector3Transform(m_up, rotate);
-        
+
         UpdateCameraMatrices();
     }
 
@@ -122,10 +122,10 @@ void D3D12RaytracingLibrarySubobjects::InitializeScene()
         lightPosition = XMFLOAT4(0.0f, 1.8f, -3.0f, 0.0f);
         m_sceneCB[frameIndex].lightPosition = XMLoadFloat4(&lightPosition);
 
-        lightAmbientColor = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
+        lightAmbientColor = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
         m_sceneCB[frameIndex].lightAmbientColor = XMLoadFloat4(&lightAmbientColor);
 
-        lightDiffuseColor = XMFLOAT4(0.0f, 0.5f, 0.0f, 1.0f);
+        lightDiffuseColor = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
         m_sceneCB[frameIndex].lightDiffuseColor = XMLoadFloat4(&lightDiffuseColor);
     }
 
@@ -141,7 +141,7 @@ void D3D12RaytracingLibrarySubobjects::CreateConstantBuffers()
 {
     auto device = m_deviceResources->GetD3DDevice();
     auto frameCount = m_deviceResources->GetBackBufferCount();
-    
+
     // Create the constant buffer memory and map the CPU and GPU addresses
     const D3D12_HEAP_PROPERTIES uploadHeapProperties = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
 
@@ -209,9 +209,9 @@ void D3D12RaytracingLibrarySubobjects::SerializeAndCreateRaytracingRootSignature
 void D3D12RaytracingLibrarySubobjects::CreateRootSignatures()
 {
     auto device = m_deviceResources->GetD3DDevice();
-    
-    // A unique global root signature is defined in hlsl library g_pRaytracing. For such scenario we can create 
-    // compute root signature can directly from the library bytecode, using CreateRootSignature API. 
+
+    // A unique global root signature is defined in hlsl library g_pRaytracing. For such scenario we can create
+    // compute root signature can directly from the library bytecode, using CreateRootSignature API.
     ThrowIfFailed(device->CreateRootSignature(1, g_pRaytracing, ARRAYSIZE(g_pRaytracing), IID_PPV_ARGS(&m_raytracingGlobalRootSignature)));
 }
 
@@ -240,8 +240,8 @@ void D3D12RaytracingLibrarySubobjects::CreateRaytracingPipelineStateObject()
     // This simple sample utilizes default shader association except for local root signature subobject
     // which has an explicit association specified purely for demonstration purposes.
     //
-    // Following subobjects are defined with the library itself. We can export and rename the subobjects from the 
-    // DXIL library in a similar way we export shaders. 
+    // Following subobjects are defined with the library itself. We can export and rename the subobjects from the
+    // DXIL library in a similar way we export shaders.
     // 1 - Triangle hit group
     // 1 - Shader config
     // 2 - Local root signature and association
@@ -259,7 +259,7 @@ void D3D12RaytracingLibrarySubobjects::CreateRaytracingPipelineStateObject()
     lib->SetDXILLibrary(&libdxil);
     // Define which shader exports to surface from the library.
     // If no shader exports are defined for a DXIL library subobject, all shaders will be surfaced.
-    // In this sample, this could be ommited for convenience since the sample uses all shaders in the library. 
+    // In this sample, this could be ommited for convenience since the sample uses all shaders in the library.
     {
         lib->DefineExport(c_raygenShaderName);
         lib->DefineExport(c_closestHitShaderName);
@@ -267,7 +267,7 @@ void D3D12RaytracingLibrarySubobjects::CreateRaytracingPipelineStateObject()
     }
 
     // Define which subobjects exports to use from the library.
-    // If no exports are defined all subobjects are used. 
+    // If no exports are defined all subobjects are used.
     {
         lib->DefineExport(c_globalRootSignatureName);
         lib->DefineExport(c_localRootSignatureName);
@@ -314,7 +314,7 @@ void D3D12RaytracingLibrarySubobjects::CreateDescriptorHeap()
     // Allocate a heap for 3 descriptors:
     // 2 - vertex and index buffer SRVs
     // 1 - raytracing output texture SRV
-    descriptorHeapDesc.NumDescriptors = 3; 
+    descriptorHeapDesc.NumDescriptors = 3;
     descriptorHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     descriptorHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
     descriptorHeapDesc.NodeMask = 0;
@@ -330,68 +330,74 @@ void D3D12RaytracingLibrarySubobjects::BuildGeometry()
     auto device = m_deviceResources->GetD3DDevice();
 
     // Cube indices.
-    Index indices[] =
+    Index cube_indices[] =
     {
-        3,1,0,
-        2,1,3,
+        3,0,1,
+        2,3,1,
 
-        6,4,5,
-        7,4,6,
+        6,5,4,
+        7,6,4,
 
-        11,9,8,
-        10,9,11,
+        11,8,9,
+        10,11,9,
 
-        14,12,13,
-        15,12,14,
+        14,13,12,
+        15,14,12,
 
         19,17,16,
         18,17,19,
 
-        22,20,21,
-        23,20,22
+        //22,21,20,
+        //23,22,22,
     };
 
     // Cube vertices positions and corresponding triangle normals.
-    Vertex vertices[] =
+    Vertex cube_vertices[] =
     {
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+        // TOP WALL
+        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, -1.0f, 0.0f) },
+        // BOTTOM WALL
+        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f) },
+        // LEFT WALL
+        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f), XMFLOAT3(0.0f, 1.0f, 0.0f) },
 
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+        // RIGHT WALL
+        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
+        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(-1.0f, 0.0f, 0.0f), XMFLOAT3(1.0f, 0.0f, 0.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+        // REAR WALL
+        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
 
-        { XMFLOAT3(-1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, -1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-        { XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
-        { XMFLOAT3(-1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 1.0f) },
+        // FRONT WALL
+        //{ XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+        //{ XMFLOAT3(1.0f, -1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+        //{ XMFLOAT3(1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
+        //{ XMFLOAT3(-1.0f, 1.0f, -1.0f), XMFLOAT3(0.0f, 0.0f, -1.0f) },
     };
 
-    AllocateUploadBuffer(device, indices, sizeof(indices), &m_indexBuffer.resource);
-    AllocateUploadBuffer(device, vertices, sizeof(vertices), &m_vertexBuffer.resource);
+    AllocateUploadBuffer(device, cube_indices, sizeof(cube_indices), &m_indexBuffer.resource);
+    AllocateUploadBuffer(device, cube_vertices, sizeof(cube_vertices), &m_vertexBuffer.resource);
 
     // Vertex buffer is passed to the shader along with index buffer as a descriptor table.
     // Vertex buffer descriptor must follow index buffer descriptor in the descriptor heap.
-    UINT descriptorIndexIB = CreateBufferSRV(&m_indexBuffer, sizeof(indices)/4, 0);
-    UINT descriptorIndexVB = CreateBufferSRV(&m_vertexBuffer, ARRAYSIZE(vertices), sizeof(vertices[0]));
+    UINT descriptorIndexIB = CreateBufferSRV(&m_indexBuffer, sizeof(cube_indices)/4, 0);
+    UINT descriptorIndexVB = CreateBufferSRV(&m_vertexBuffer, ARRAYSIZE(cube_vertices), sizeof(cube_vertices[0]));
     ThrowIfFalse(descriptorIndexVB == descriptorIndexIB + 1, L"Vertex Buffer descriptor index must follow that of Index Buffer descriptor index!");
 }
 
@@ -417,14 +423,14 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
     geometryDesc.Triangles.VertexBuffer.StartAddress = m_vertexBuffer.resource->GetGPUVirtualAddress();
     geometryDesc.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
 
-    // Mark the geometry as opaque. 
+    // Mark the geometry as opaque.
     // PERFORMANCE TIP: mark geometry as opaque whenever applicable as it can enable important ray processing optimizations.
     // Note: When rays encounter opaque geometry an any hit shader will not be executed whether it is present or not.
     geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
 
     // Get required sizes for an acceleration structure.
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
-    
+
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottomLevelBuildDesc = {};
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &bottomLevelInputs = bottomLevelBuildDesc.Inputs;
     bottomLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
@@ -440,14 +446,14 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
     topLevelInputs.NumDescs = 1;
     topLevelInputs.pGeometryDescs = nullptr;
     topLevelInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
-    
+
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO topLevelPrebuildInfo;
     m_dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&topLevelInputs, &topLevelPrebuildInfo);
 
     ThrowIfFalse(topLevelPrebuildInfo.ResultDataMaxSizeInBytes > 0);
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottomLevelPrebuildInfo = {};
-    
+
     m_dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&bottomLevelInputs, &bottomLevelPrebuildInfo);
     ThrowIfFalse(bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes > 0);
 
@@ -455,10 +461,10 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
     AllocateUAVBuffer(device, max(topLevelPrebuildInfo.ScratchDataSizeInBytes, bottomLevelPrebuildInfo.ScratchDataSizeInBytes), &scratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
 
     // Allocate resources for acceleration structures.
-    // Acceleration structures can only be placed in resources that are created in the default heap (or custom heap equivalent). 
-    // Default heap is OK since the application doesn’t need CPU read/write access to them. 
-    // The resources that will contain acceleration structures must be created in the state D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE, 
-    // and must have resource flag D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS. The ALLOW_UNORDERED_ACCESS requirement simply acknowledges both: 
+    // Acceleration structures can only be placed in resources that are created in the default heap (or custom heap equivalent).
+    // Default heap is OK since the application doesnï¿½t need CPU read/write access to them.
+    // The resources that will contain acceleration structures must be created in the state D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE,
+    // and must have resource flag D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS. The ALLOW_UNORDERED_ACCESS requirement simply acknowledges both:
     //  - the system will be doing this type of access in its implementation of acceleration structure builds behind the scenes.
     //  - from the app point of view, synchronization of writes/reads to acceleration structures is accomplished using UAV barriers.
     {
@@ -467,7 +473,7 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
         AllocateUAVBuffer(device, bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes, &m_bottomLevelAccelerationStructure, initialResourceState, L"BottomLevelAccelerationStructure");
         AllocateUAVBuffer(device, topLevelPrebuildInfo.ResultDataMaxSizeInBytes, &m_topLevelAccelerationStructure, initialResourceState, L"TopLevelAccelerationStructure");
     }
-    
+
     ComPtr<ID3D12Resource> instanceDescs;
     {
         D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
@@ -599,7 +605,7 @@ void D3D12RaytracingLibrarySubobjects::DoRaytracing()
 {
     auto commandList = m_deviceResources->GetCommandList();
     auto frameIndex = m_deviceResources->GetCurrentFrameIndex();
-    
+
     auto DispatchRays = [&](auto* commandList, auto* stateObject, auto* dispatchDesc)
     {
         // Since each shader table has only one shader record, the stride is same as the size.
@@ -632,7 +638,7 @@ void D3D12RaytracingLibrarySubobjects::DoRaytracing()
     memcpy(&m_mappedConstantData[frameIndex].constants, &m_sceneCB[frameIndex], sizeof(m_sceneCB[frameIndex]));
     auto cbGpuAddress = m_perFrameConstants->GetGPUVirtualAddress() + frameIndex * sizeof(m_mappedConstantData[0]);
     commandList->SetComputeRootConstantBufferView(GlobalRootSignatureParams::SceneConstantSlot, cbGpuAddress);
-   
+
     // Bind the heaps, acceleration structure and dispatch rays.
     D3D12_DISPATCH_RAYS_DESC dispatchDesc = {};
     {
@@ -671,7 +677,7 @@ void D3D12RaytracingLibrarySubobjects::CopyRaytracingOutputToBackbuffer()
 // Create resources that are dependent on the size of the main window.
 void D3D12RaytracingLibrarySubobjects::CreateWindowSizeDependentResources()
 {
-    CreateRaytracingOutputResource(); 
+    CreateRaytracingOutputResource();
     UpdateCameraMatrices();
 }
 
@@ -796,7 +802,7 @@ void D3D12RaytracingLibrarySubobjects::OnSizeChanged(UINT width, UINT height, bo
     CreateWindowSizeDependentResources();
 }
 
-// Allocate a descriptor and return its index. 
+// Allocate a descriptor and return its index.
 // If the passed descriptorIndexToUse is valid, it will be used instead of allocating a new one.
 UINT D3D12RaytracingLibrarySubobjects::AllocateDescriptor(D3D12_CPU_DESCRIPTOR_HANDLE* cpuDescriptor, UINT descriptorIndexToUse)
 {

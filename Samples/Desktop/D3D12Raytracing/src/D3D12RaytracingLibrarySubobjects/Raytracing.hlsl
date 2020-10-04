@@ -96,13 +96,13 @@ uint3 Load3x16BitIndices(uint offsetBytes)
 typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 struct RayPayload
 {
-    float4 color;
+    float4 colorAndT;
 };
 
 // Retrieve hit world position.
-float3 HitWorldPosition()
+float3 HitWorldPosition(float t)
 {
-    return WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
+    return WorldRayOrigin() + t * WorldRayDirection();
 }
 
 // Retrieve attribute at a hit position interpolated from vertex attributes using the hit's barycentrics.
@@ -159,17 +159,29 @@ void MyRaygenShader()
     // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
-    RayPayload payload = { float4(0, 0, 0, 0) };
-    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
+    RayPayload direct = { float4(0, 0, 0, 0) };
+    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, direct);
+    
+    ray.Origin += ray.Direction * direct.colorAndT.w;
+    ray.Direction = g_sceneCB.lightPosition - ray.Origin;
+    ray.TMin = 0.00001;
+    ray.TMax = 1.0;
+    RayPayload shadow = { float4(0, 0, 0, 0) };
+    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, shadow);
+
+    if (shadow.colorAndT.w < 1.0) {
+        direct.colorAndT.xyz = float3(0.0, 0.0, 0.0);
+    }
 
     // Write the raytraced color to the output texture.
-    RenderTarget[DispatchRaysIndex().xy] = payload.color;
+    RenderTarget[DispatchRaysIndex().xy] = float4(direct.colorAndT.xyz, 1.0);
 }
 
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
-    float3 hitPosition = HitWorldPosition();
+    float t = RayTCurrent();
+    float3 hitPosition = HitWorldPosition(t);
 
     // Get the base index of the triangle's first 16 bit index.
     uint indexSizeInBytes = 2;
@@ -195,14 +207,14 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
     float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
 
-    payload.color = color;
+    payload.colorAndT = float4(color.xyz * Vertices[indices[0]].color, t);
 }
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    float4 background = float4(0.0f, 0.2f, 0.4f, 1.0f);
-    payload.color = background;
+    float4 background = float4(0.0f, 0.2f, 0.4f, 1.0/0.0);
+    payload.colorAndT = background;
 }
 
 #endif // RAYTRACING_HLSL
