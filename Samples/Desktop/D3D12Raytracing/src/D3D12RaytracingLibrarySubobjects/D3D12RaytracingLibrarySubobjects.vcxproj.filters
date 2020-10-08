@@ -81,6 +81,12 @@
   <ItemGroup>
     <None Include="readme.md" />
     <None Include="packages.config" />
+    <None Include="Random.hlsli">
+      <Filter>Assets\Shaders\Util</Filter>
+    </None>
+    <None Include="Util.hlsli">
+      <Filter>Assets\Shaders\Util</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Raytracing.hlsl">

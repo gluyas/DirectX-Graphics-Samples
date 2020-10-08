@@ -13,9 +13,10 @@
 #define RAYTRACING_HLSL
 
 #define HLSL
+#include "Random.hlsli"
 #include "RaytracingHlslCompat.h"
 
-// Subobjects definitions at library scope. 
+// Subobjects definitions at library scope.
 GlobalRootSignature MyGlobalRootSignature =
 {
     "DescriptorTable( UAV( u0 ) ),"                        // Output texture
@@ -24,9 +25,9 @@ GlobalRootSignature MyGlobalRootSignature =
     "DescriptorTable( SRV( t1, numDescriptors = 2 ) )"     // Static index and vertex buffers.
 };
 
-LocalRootSignature MyLocalRootSignature = 
+LocalRootSignature MyLocalRootSignature =
 {
-    "RootConstants( num32BitConstants = 4, b1 )"           // Cube constants        
+    "RootConstants( num32BitConstants = 4, b1 )"           // Cube constants
 };
 
 TriangleHitGroup MyHitGroup =
@@ -38,20 +39,29 @@ TriangleHitGroup MyHitGroup =
 SubobjectToExportsAssociation  MyLocalRootSignatureAssociation =
 {
     "MyLocalRootSignature",  // subobject name
-    "MyHitGroup"             // export association 
+    "MyHitGroup"             // export association
 };
 
 RaytracingShaderConfig  MyShaderConfig =
 {
-    16, // max payload size
+    32, // max payload size
     8   // max attribute size
+};
+
+typedef BuiltInTriangleIntersectionAttributes MyAttributes;
+
+struct RayPayload
+{
+    float3 color;
+    float  t;
+    float3 scatter; // TODO: material id?
+    dword  rng;     // TODO: flags?
 };
 
 RaytracingPipelineConfig MyPipelineConfig =
 {
     1 // max trace recursion depth
 };
-
 
 RaytracingAccelerationStructure Scene : register(t0, space0);
 RWTexture2D<float4> RenderTarget : register(u0);
@@ -67,15 +77,15 @@ uint3 Load3x16BitIndices(uint offsetBytes)
     uint3 indices;
 
     // ByteAdressBuffer loads must be aligned at a 4 byte boundary.
-    // Since we need to read three 16 bit indices: { 0, 1, 2 } 
+    // Since we need to read three 16 bit indices: { 0, 1, 2 }
     // aligned at a 4 byte boundary as: { 0 1 } { 2 0 } { 1 2 } { 0 1 } ...
     // we will load 8 bytes (~ 4 indices { a b | c d }) to handle two possible index triplet layouts,
     // based on first index's offsetBytes being aligned at the 4 byte boundary or not:
     //  Aligned:     { 0 1 | 2 - }
     //  Not aligned: { - 0 | 1 2 }
-    const uint dwordAlignedOffset = offsetBytes & ~3;    
+    const uint dwordAlignedOffset = offsetBytes & ~3;
     const uint2 four16BitIndices = Indices.Load2(dwordAlignedOffset);
- 
+
     // Aligned: { 0 1 | 2 - } => retrieve first three 16bit indices
     if (dwordAlignedOffset == offsetBytes)
     {
@@ -92,12 +102,6 @@ uint3 Load3x16BitIndices(uint offsetBytes)
 
     return indices;
 }
-
-typedef BuiltInTriangleIntersectionAttributes MyAttributes;
-struct RayPayload
-{
-    float4 colorAndT;
-};
 
 // Retrieve hit world position.
 float3 HitWorldPosition(float t)
@@ -146,7 +150,7 @@ void MyRaygenShader()
 {
     float3 rayDir;
     float3 origin;
-    
+
     // Generate a ray for a camera pixel corresponding to an index from the dispatched 2D grid.
     GenerateCameraRay(DispatchRaysIndex().xy, origin, rayDir);
 
@@ -159,29 +163,29 @@ void MyRaygenShader()
     // TMin should be kept small to prevent missing geometry at close contact areas.
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
-    RayPayload direct = { float4(0, 0, 0, 0) };
+    RayPayload direct;
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, direct);
-    
-    ray.Origin += ray.Direction * direct.colorAndT.w;
+
+    ray.Origin += ray.Direction * direct.t;
     ray.Direction = g_sceneCB.lightPosition - ray.Origin;
     ray.TMin = 0.00001;
     ray.TMax = 1.0;
-    RayPayload shadow = { float4(0, 0, 0, 0) };
+    RayPayload shadow;
     TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, shadow);
 
-    if (shadow.colorAndT.w < 1.0) {
-        direct.colorAndT.xyz = float3(0.0, 0.0, 0.0);
+    if (shadow.t < 1.0) {
+        direct.color = float3(0.0, 0.0, 0.0);
     }
 
     // Write the raytraced color to the output texture.
-    RenderTarget[DispatchRaysIndex().xy] = float4(direct.colorAndT.xyz, 1.0);
+    RenderTarget[DispatchRaysIndex().xy] = float4(direct.color, 1.0);
 }
 
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
-    float t = RayTCurrent();
-    float3 hitPosition = HitWorldPosition(t);
+    payload.t = RayTCurrent();
+    float3 hitPosition = HitWorldPosition(payload.t);
 
     // Get the base index of the triangle's first 16 bit index.
     uint indexSizeInBytes = 2;
@@ -193,28 +197,28 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     const uint3 indices = Load3x16BitIndices(baseIndex);
 
     // Retrieve corresponding vertex normals for the triangle vertices.
-    float3 vertexNormals[3] = { 
-        Vertices[indices[0]].normal, 
-        Vertices[indices[1]].normal, 
-        Vertices[indices[2]].normal 
+    float3 vertexNormals[3] = {
+        Vertices[indices[0]].normal,
+        Vertices[indices[1]].normal,
+        Vertices[indices[2]].normal
     };
 
     // Compute the triangle's normal.
-    // This is redundant and done for illustration purposes 
-    // as all the per-vertex normals are the same and match triangle's normal in this sample. 
+    // This is redundant and done for illustration purposes
+    // as all the per-vertex normals are the same and match triangle's normal in this sample.
     float3 triangleNormal = HitAttribute(vertexNormals, attr);
 
     float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
     float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
 
-    payload.colorAndT = float4(color.xyz * Vertices[indices[0]].color, t);
+    payload.color = float3(color.xyz * Vertices[indices[0]].color);
 }
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    float4 background = float4(0.0f, 0.2f, 0.4f, 1.0/0.0);
-    payload.colorAndT = background;
+    payload.color = float3(0.0f, 0.2f, 0.4f);
+    payload.t     = 1.0/0.0;
 }
 
 #endif // RAYTRACING_HLSL
