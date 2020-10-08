@@ -118,9 +118,9 @@ float3 HitAttribute(float3 vertexAttribute[3], BuiltInTriangleIntersectionAttrib
 }
 
 // Generate a ray in world space for a camera pixel corresponding to an index from the dispatched 2D grid.
-inline void GenerateCameraRay(inout uint seed, uint2 index, out float3 origin, out float3 direction)
+inline void GenerateCameraRay(inout uint seed, uint2 index, float spread, out float3 origin, out float3 direction)
 {
-    float2 xy = index + 0.5f + RandomInsideUnitCircle(seed)*0.5; // center in the middle of the pixel.
+    float2 xy = index + 0.5f + RandomInsideUnitCircle(seed)*spread; // center in the middle of the pixel.
     float2 screenPos = xy / DispatchRaysDimensions().xy * 2.0 - 1.0;
 
     // Invert Y for DirectX-style coordinates.
@@ -157,17 +157,24 @@ void MyRaygenShader()
 
     float3 pixelColor = 0;
 
-    const uint SAMPLES = 32;
-    const uint BOUNCES = 8;
+    const uint SAMPLES = 256;
+    const uint BOUNCES = 4;
     for (uint s = 0; s < SAMPLES; s++) {
-        GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, ray.Origin, ray.Direction);
+        GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, 0.5*min(1, s), ray.Origin, ray.Direction);
 
         float3 rayColor = 1;
         for (uint b = 0; b < BOUNCES; b++) {
             TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
 
             rayColor *= payload.Color;
-            if (!any(payload.Scatter)) { break; }
+            if (!any(payload.Scatter)) {
+                if (s == 0 && b == 0 && isinf(payload.T)) {
+                    // terminates outer loop if first ray misses geometry (bad for antialiasing)
+                    rayColor *= SAMPLES;
+                    s = SAMPLES;
+                }
+                break;
+            }
 
             ray.Origin   += payload.T * ray.Direction;
             ray.Direction = payload.Scatter;
@@ -223,7 +230,7 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 void MyMissShader(inout RayPayload payload)
 {
     payload.Scatter = 0;
-    payload.Color   = 1.5;
+    payload.Color   = 2;
     payload.T       = INFINITY;
 }
 
