@@ -52,10 +52,10 @@ typedef BuiltInTriangleIntersectionAttributes MyAttributes;
 
 struct RayPayload
 {
-    float3 color;
-    float  t;
-    float3 scatter; // TODO: material id?
-    dword  rng;     // TODO: flags?
+    float3 Color;
+    float  T;
+    float3 Scatter; // TODO: material id?
+    uint   RngSeed; // TODO: flags?
 };
 
 RaytracingPipelineConfig MyPipelineConfig =
@@ -104,9 +104,9 @@ uint3 Load3x16BitIndices(uint offsetBytes)
 }
 
 // Retrieve hit world position.
-float3 HitWorldPosition(float t)
+float3 HitWorldPosition()
 {
-    return WorldRayOrigin() + t * WorldRayDirection();
+    return WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 }
 
 // Retrieve attribute at a hit position interpolated from vertex attributes using the hit's barycentrics.
@@ -118,9 +118,9 @@ float3 HitAttribute(float3 vertexAttribute[3], BuiltInTriangleIntersectionAttrib
 }
 
 // Generate a ray in world space for a camera pixel corresponding to an index from the dispatched 2D grid.
-inline void GenerateCameraRay(uint2 index, out float3 origin, out float3 direction)
+inline void GenerateCameraRay(inout uint seed, uint2 index, out float3 origin, out float3 direction)
 {
-    float2 xy = index + 0.5f; // center in the middle of the pixel.
+    float2 xy = index + 0.5f + RandomInsideUnitCircle(seed)*0.5; // center in the middle of the pixel.
     float2 screenPos = xy / DispatchRaysDimensions().xy * 2.0 - 1.0;
 
     // Invert Y for DirectX-style coordinates.
@@ -148,44 +148,42 @@ float4 CalculateDiffuseLighting(float3 hitPosition, float3 normal)
 [shader("raygeneration")]
 void MyRaygenShader()
 {
-    float3 rayDir;
-    float3 origin;
+    RayPayload payload;
+    payload.RngSeed = Hash(DispatchRaysIndex().xy);
 
-    // Generate a ray for a camera pixel corresponding to an index from the dispatched 2D grid.
-    GenerateCameraRay(DispatchRaysIndex().xy, origin, rayDir);
-
-    // Trace the ray.
-    // Set the ray's extents.
     RayDesc ray;
-    ray.Origin = origin;
-    ray.Direction = rayDir;
-    // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
-    // TMin should be kept small to prevent missing geometry at close contact areas.
-    ray.TMin = 0.001;
+    ray.TMin = 0.0001;
     ray.TMax = 10000.0;
-    RayPayload direct;
-    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, direct);
 
-    ray.Origin += ray.Direction * direct.t;
-    ray.Direction = g_sceneCB.lightPosition - ray.Origin;
-    ray.TMin = 0.00001;
-    ray.TMax = 1.0;
-    RayPayload shadow;
-    TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, shadow);
+    float3 pixelColor = 0;
 
-    if (shadow.t < 1.0) {
-        direct.color = float3(0.0, 0.0, 0.0);
+    const uint SAMPLES = 32;
+    const uint BOUNCES = 8;
+    for (uint s = 0; s < SAMPLES; s++) {
+        GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, ray.Origin, ray.Direction);
+
+        float3 rayColor = 1;
+        for (uint b = 0; b < BOUNCES; b++) {
+            TraceRay(Scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, ~0, 0, 1, 0, ray, payload);
+
+            rayColor *= payload.Color;
+            if (!any(payload.Scatter)) { break; }
+
+            ray.Origin   += payload.T * ray.Direction;
+            ray.Direction = payload.Scatter;
+        }
+        pixelColor += rayColor;
     }
+    pixelColor /= SAMPLES;
 
     // Write the raytraced color to the output texture.
-    RenderTarget[DispatchRaysIndex().xy] = float4(direct.color, 1.0);
+    RenderTarget[DispatchRaysIndex().xy] = float4(pixelColor, 1.0);
 }
 
 [shader("closesthit")]
 void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
 {
-    payload.t = RayTCurrent();
-    float3 hitPosition = HitWorldPosition(payload.t);
+    float3 hitPosition = HitWorldPosition();
 
     // Get the base index of the triangle's first 16 bit index.
     uint indexSizeInBytes = 2;
@@ -211,14 +209,22 @@ void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
     float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
     float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
 
-    payload.color = float3(color.xyz * Vertices[indices[0]].color);
+    // Generate scattered ray
+    float3 scatter = RandomOnUnitSphere(payload.RngSeed);
+    float  d       = dot(scatter, triangleNormal);
+    scatter -= min(0, 2*d) * triangleNormal; // ensure scatter away from normal
+
+    payload.T       = RayTCurrent();
+    payload.Scatter = scatter;
+    payload.Color   = abs(d)*float3(Vertices[indices[0]].color);
 }
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
-    payload.color = float3(0.0f, 0.2f, 0.4f);
-    payload.t     = 1.0/0.0;
+    payload.Scatter = 0;
+    payload.Color   = 1.5;
+    payload.T       = INFINITY;
 }
 
 #endif // RAYTRACING_HLSL

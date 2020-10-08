@@ -90,7 +90,7 @@ float2 RandomInsideUnitCircle(inout uint seed)
 float2 RandomOnUnitCircle(inout uint seed)
 {
     float theta = Random01(seed)*TAU;
-    return { cos(theta), sin(theta) };
+    return float2(cos(theta), sin(theta));
 }
 
 float3 RandomInsideUnitSphere(inout uint seed)
@@ -111,7 +111,7 @@ float3 RandomOnUnitSphere(inout uint seed)
     float theta1 = Random01(seed)*TAU;
     float theta2 = Random01(seed)*TAU;
     float cos1   = cos(theta1);
-    return { cos1*cos(theta2), cos1*sin(theta2), sin(theta1) };
+    return float3(cos1*cos(theta2), cos1*sin(theta2), sin(theta1));
 }
 
 float3 RandomInsideHemisphere(inout uint seed, float3 normal) {
