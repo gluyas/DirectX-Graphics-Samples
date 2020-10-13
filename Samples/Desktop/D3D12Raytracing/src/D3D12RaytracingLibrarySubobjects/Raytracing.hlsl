@@ -30,16 +30,28 @@ LocalRootSignature MyLocalRootSignature =
     "RootConstants( num32BitConstants = 4, b1 )"           // Cube constants
 };
 
-TriangleHitGroup MyHitGroup =
+TriangleHitGroup LambertHitGroup =
 {
-    "",                     // AnyHit
-    "MyClosestHitShader",   // ClosestHit
+    "",                    // AnyHit
+    "LambertClosestHit",   // ClosestHit
 };
 
-SubobjectToExportsAssociation  MyLocalRootSignatureAssociation =
+SubobjectToExportsAssociation  LambertLocalRootSignatureAssociation =
 {
     "MyLocalRootSignature",  // subobject name
-    "MyHitGroup"             // export association
+    "LambertHitGroup"        // export association
+};
+
+TriangleHitGroup LightHitGroup =
+{
+    "",                  // AnyHit
+    "LightClosestHit",   // ClosestHit
+};
+
+SubobjectToExportsAssociation  LightLocalRootSignatureAssociation =
+{
+    "MyLocalRootSignature",  // subobject name
+    "LightHitGroup"          // export association
 };
 
 RaytracingShaderConfig  MyShaderConfig =
@@ -69,7 +81,7 @@ ByteAddressBuffer Indices : register(t1, space0);
 StructuredBuffer<Vertex> Vertices : register(t2, space0);
 
 ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
-ConstantBuffer<CubeConstantBuffer> g_cubeCB : register(b1);
+ConstantBuffer<GeometryConstantBuffer> g_geometryCB : register(b1);
 
 // Load three 16 bit indices from a byte addressed buffer.
 uint3 Load3x16BitIndices(uint offsetBytes)
@@ -117,6 +129,32 @@ float3 HitAttribute(float3 vertexAttribute[3], BuiltInTriangleIntersectionAttrib
         attr.barycentrics.y * (vertexAttribute[2] - vertexAttribute[0]);
 }
 
+inline Vertex HitInterpolatedVertexAttributes(MyAttributes attr) {
+    // Get the base index of the triangle's first 16 bit index.
+    const uint INDEX_SIZE = 2;
+    uint baseIndex = (g_geometryCB.indexBufferOffset + 3*PrimitiveIndex())*INDEX_SIZE;
+
+    // Load up 3 16 bit indices for the triangle.
+    const uint3 indices = Load3x16BitIndices(baseIndex);
+
+    float3 normals[3] = {
+        Vertices[indices[0]].normal,
+        Vertices[indices[1]].normal,
+        Vertices[indices[2]].normal
+    };
+    float3 colors[3] = {
+        Vertices[indices[0]].color,
+        Vertices[indices[1]].color,
+        Vertices[indices[2]].color
+    };
+
+    Vertex hit;
+    hit.position = HitWorldPosition();
+    hit.normal   = HitAttribute(normals, attr);
+    hit.color    = HitAttribute(colors,  attr);
+    return hit;
+}
+
 // Generate a ray in world space for a camera pixel corresponding to an index from the dispatched 2D grid.
 inline void GenerateCameraRay(inout uint seed, uint2 index, float spread, out float3 origin, out float3 direction)
 {
@@ -134,17 +172,6 @@ inline void GenerateCameraRay(inout uint seed, uint2 index, float spread, out fl
     direction = normalize(world.xyz - origin);
 }
 
-// Diffuse lighting calculation.
-float4 CalculateDiffuseLighting(float3 hitPosition, float3 normal)
-{
-    float3 pixelToLight = normalize(g_sceneCB.lightPosition.xyz - hitPosition);
-
-    // Diffuse contribution.
-    float fNDotL = max(0.0f, dot(pixelToLight, normal));
-
-    return g_cubeCB.albedo * g_sceneCB.lightDiffuseColor * fNDotL;
-}
-
 [shader("raygeneration")]
 void MyRaygenShader()
 {
@@ -158,7 +185,7 @@ void MyRaygenShader()
     float3 pixelColor = 0;
 
     const uint SAMPLES = 256;
-    const uint BOUNCES = 4;
+    const uint BOUNCES = 8;
     for (uint s = 0; s < SAMPLES; s++) {
         GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, 0.5*min(1, s), ray.Origin, ray.Direction);
 
@@ -188,49 +215,35 @@ void MyRaygenShader()
 }
 
 [shader("closesthit")]
-void MyClosestHitShader(inout RayPayload payload, in MyAttributes attr)
+void LambertClosestHit(inout RayPayload payload, in MyAttributes attr)
 {
-    float3 hitPosition = HitWorldPosition();
-
-    // Get the base index of the triangle's first 16 bit index.
-    uint indexSizeInBytes = 2;
-    uint indicesPerTriangle = 3;
-    uint triangleIndexStride = indicesPerTriangle * indexSizeInBytes;
-    uint baseIndex = PrimitiveIndex() * triangleIndexStride;
-
-    // Load up 3 16 bit indices for the triangle.
-    const uint3 indices = Load3x16BitIndices(baseIndex);
-
-    // Retrieve corresponding vertex normals for the triangle vertices.
-    float3 vertexNormals[3] = {
-        Vertices[indices[0]].normal,
-        Vertices[indices[1]].normal,
-        Vertices[indices[2]].normal
-    };
-
-    // Compute the triangle's normal.
-    // This is redundant and done for illustration purposes
-    // as all the per-vertex normals are the same and match triangle's normal in this sample.
-    float3 triangleNormal = HitAttribute(vertexNormals, attr);
-
-    float4 diffuseColor = CalculateDiffuseLighting(hitPosition, triangleNormal);
-    float4 color = g_sceneCB.lightAmbientColor + diffuseColor;
+    Vertex hit = HitInterpolatedVertexAttributes(attr);
 
     // Generate scattered ray
     float3 scatter = RandomOnUnitSphere(payload.RngSeed);
-    float  d       = dot(scatter, triangleNormal);
-    scatter -= min(0, 2*d) * triangleNormal; // ensure scatter away from normal
+    float  d       = dot(scatter, hit.normal);
+    scatter -= min(0, 2*d) * hit.normal; // ensure scatter away from normal
 
     payload.T       = RayTCurrent();
     payload.Scatter = scatter;
-    payload.Color   = abs(d)*float3(Vertices[indices[0]].color);
+    payload.Color   = abs(d) * hit.color;
+}
+
+[shader("closesthit")]
+void LightClosestHit(inout RayPayload payload, in MyAttributes attr)
+{
+    Vertex hit = HitInterpolatedVertexAttributes(attr);
+
+    payload.T       = RayTCurrent();
+    payload.Scatter = 0;
+    payload.Color   = max(0, -dot(hit.normal, WorldRayDirection())) * hit.color;
 }
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
     payload.Scatter = 0;
-    payload.Color   = 2;
+    payload.Color   = 0;
     payload.T       = INFINITY;
 }
 

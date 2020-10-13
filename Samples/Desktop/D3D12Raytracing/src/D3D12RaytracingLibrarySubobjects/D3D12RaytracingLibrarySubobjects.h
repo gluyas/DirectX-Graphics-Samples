@@ -80,7 +80,6 @@ private:
 
     // Raytracing scene
     SceneConstantBuffer m_sceneCB[FrameCount];
-    CubeConstantBuffer m_cubeCB;
 
     // Geometry
     struct D3DBuffer
@@ -102,18 +101,22 @@ private:
     UINT m_raytracingOutputResourceUAVDescriptorHeapIndex;
 
     // Shader tables
-    static const wchar_t* c_hitGroupName;
+    static const wchar_t* c_lambertHitGroupName;
+    static const wchar_t* c_lightHitGroupName;
     static const wchar_t* c_raygenShaderName;
-    static const wchar_t* c_closestHitShaderName;
+    static const wchar_t* c_lambertClosestHitShaderName;
+    static const wchar_t* c_lightClosestHitShaderName;
     static const wchar_t* c_missShaderName;
     ComPtr<ID3D12Resource> m_missShaderTable;
-    ComPtr<ID3D12Resource> m_hitGroupShaderTable;
     ComPtr<ID3D12Resource> m_rayGenShaderTable;
+    ComPtr<ID3D12Resource> m_hitGroupShaderTable;
+    UINT64                 m_hitGroupShaderTableStride;
 
     // Library subobjects
     static const wchar_t*  c_globalRootSignatureName;
     static const wchar_t*  c_localRootSignatureName;
-    static const wchar_t*  c_localRootSignatureAssociationName;
+    static const wchar_t*  c_lambertLocalRootSignatureAssociationName;
+    static const wchar_t*  c_lightLocalRootSignatureAssociationName;
     static const wchar_t*  c_shaderConfigName;
     static const wchar_t*  c_pipelineConfigName;
 

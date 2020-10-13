@@ -30,9 +30,9 @@ struct SceneConstantBuffer
     XMVECTOR lightDiffuseColor;
 };
 
-struct CubeConstantBuffer
+struct GeometryConstantBuffer
 {
-    XMFLOAT4 albedo;
+    UINT indexBufferOffset;
 };
 
 struct Vertex
