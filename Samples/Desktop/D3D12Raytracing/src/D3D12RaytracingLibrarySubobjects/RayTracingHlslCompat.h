@@ -32,7 +32,7 @@ struct SceneConstantBuffer
 
 struct GeometryConstantBuffer
 {
-    UINT indexBufferOffset;
+    UINT bufferIndexOffset;
 };
 
 struct Vertex

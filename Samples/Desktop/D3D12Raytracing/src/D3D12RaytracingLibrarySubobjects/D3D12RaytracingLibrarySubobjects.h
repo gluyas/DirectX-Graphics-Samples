@@ -92,7 +92,8 @@ private:
     D3DBuffer m_vertexBuffer;
 
     // Acceleration structure
-    ComPtr<ID3D12Resource> m_bottomLevelAccelerationStructure;
+    ComPtr<ID3D12Resource> m_meshAccelerationStructure;
+    ComPtr<ID3D12Resource> m_aabbAccelerationStructure;
     ComPtr<ID3D12Resource> m_topLevelAccelerationStructure;
 
     // Raytracing output
@@ -103,9 +104,12 @@ private:
     // Shader tables
     static const wchar_t* c_lambertHitGroupName;
     static const wchar_t* c_lightHitGroupName;
+    static const wchar_t* c_dielectricSphereHitGroupName;
     static const wchar_t* c_raygenShaderName;
     static const wchar_t* c_lambertClosestHitShaderName;
     static const wchar_t* c_lightClosestHitShaderName;
+    static const wchar_t* c_dielectricSphereClosestHitShaderName;
+    static const wchar_t* c_sphereIntersectionShaderName;
     static const wchar_t* c_missShaderName;
     ComPtr<ID3D12Resource> m_missShaderTable;
     ComPtr<ID3D12Resource> m_rayGenShaderTable;
@@ -117,6 +121,7 @@ private:
     static const wchar_t*  c_localRootSignatureName;
     static const wchar_t*  c_lambertLocalRootSignatureAssociationName;
     static const wchar_t*  c_lightLocalRootSignatureAssociationName;
+    static const wchar_t*  c_dielectricSphereLocalRootSignatureAssociationName;
     static const wchar_t*  c_shaderConfigName;
     static const wchar_t*  c_pipelineConfigName;
 

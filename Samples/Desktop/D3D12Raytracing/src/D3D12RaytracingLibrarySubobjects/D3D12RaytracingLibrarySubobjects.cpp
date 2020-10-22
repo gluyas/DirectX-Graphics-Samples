@@ -19,9 +19,12 @@ using namespace DX;
 
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_lambertHitGroupName = L"LambertHitGroup";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_lightHitGroupName = L"LightHitGroup";
+const wchar_t* D3D12RaytracingLibrarySubobjects::c_dielectricSphereHitGroupName = L"DielectricSphereHitGroup";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_raygenShaderName = L"MyRaygenShader";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_lambertClosestHitShaderName = L"LambertClosestHit";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_lightClosestHitShaderName = L"LightClosestHit";
+const wchar_t* D3D12RaytracingLibrarySubobjects::c_dielectricSphereClosestHitShaderName = L"DielectricSphereClosestHit";
+const wchar_t* D3D12RaytracingLibrarySubobjects::c_sphereIntersectionShaderName = L"SphereIntersection";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_missShaderName = L"MyMissShader";
 
 // Library subobject names
@@ -29,6 +32,7 @@ const wchar_t* D3D12RaytracingLibrarySubobjects::c_globalRootSignatureName = L"M
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_localRootSignatureName =  L"MyLocalRootSignature";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_lambertLocalRootSignatureAssociationName = L"LambertLocalRootSignatureAssociation";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_lightLocalRootSignatureAssociationName = L"LightLocalRootSignatureAssociation";
+const wchar_t* D3D12RaytracingLibrarySubobjects::c_dielectricSphereLocalRootSignatureAssociationName = L"DielectricSphereLocalRootSignatureAssociation";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_shaderConfigName = L"MyShaderConfig";
 const wchar_t* D3D12RaytracingLibrarySubobjects::c_pipelineConfigName = L"MyPipelineConfig";
 
@@ -262,6 +266,8 @@ void D3D12RaytracingLibrarySubobjects::CreateRaytracingPipelineStateObject()
         lib->DefineExport(c_raygenShaderName);
         lib->DefineExport(c_lambertClosestHitShaderName);
         lib->DefineExport(c_lightClosestHitShaderName);
+        lib->DefineExport(c_dielectricSphereClosestHitShaderName);
+        lib->DefineExport(c_sphereIntersectionShaderName);
         lib->DefineExport(c_missShaderName);
     }
 
@@ -272,10 +278,12 @@ void D3D12RaytracingLibrarySubobjects::CreateRaytracingPipelineStateObject()
         lib->DefineExport(c_localRootSignatureName);
         lib->DefineExport(c_lambertLocalRootSignatureAssociationName);
         lib->DefineExport(c_lightLocalRootSignatureAssociationName);
+        lib->DefineExport(c_dielectricSphereLocalRootSignatureAssociationName);
         lib->DefineExport(c_shaderConfigName);
         lib->DefineExport(c_pipelineConfigName);
         lib->DefineExport(c_lambertHitGroupName);
         lib->DefineExport(c_lightHitGroupName);
+        lib->DefineExport(c_dielectricSphereHitGroupName);
     }
 
 #if _DEBUG
@@ -397,6 +405,15 @@ void D3D12RaytracingLibrarySubobjects::BuildGeometry()
         { XMFLOAT3(0.5f, 0.9999f, -0.5f),   XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(10.0f, 10.0f, 10.0f) },
         { XMFLOAT3(0.5f, 0.9999f, 0.5f),    XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(10.0f, 10.0f, 10.0f) },
         { XMFLOAT3(-0.5f, 0.9999f, 0.5f),   XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT3(10.0f, 10.0f, 10.0f) },
+
+        // REFRACTIVE SPHERE
+        // TODO: including this in vertex buffer is really hacky!
+
+        // 16-byte boundary: AABB (whole cube for now)
+        { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
+
+        // implicit sphere: { float3 position; float radius; float refractiveIndex; float _pad20; float3 color; }
+        { XMFLOAT3(0.25f, -0.4f, -0.25f), XMFLOAT3(0.4f, 1.5f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
     };
 
     AllocateUploadBuffer(device, indices, sizeof(indices), &m_indexBuffer.resource);
@@ -404,9 +421,9 @@ void D3D12RaytracingLibrarySubobjects::BuildGeometry()
 
     // Vertex buffer is passed to the shader along with index buffer as a descriptor table.
     // Vertex buffer descriptor must follow index buffer descriptor in the descriptor heap.
-    UINT lambertDescriptorIndexIB = CreateBufferSRV(&m_indexBuffer, sizeof(indices)/4, 0);
-    UINT lambertDescriptorIndexVB = CreateBufferSRV(&m_vertexBuffer, ARRAYSIZE(vertices), sizeof(vertices[0]));
-    ThrowIfFalse(lambertDescriptorIndexVB == lambertDescriptorIndexIB + 1, L"Vertex Buffer descriptor index must follow that of Index Buffer descriptor index!");
+    UINT descriptorIndexIB = CreateBufferSRV(&m_indexBuffer, sizeof(indices)/4, 0);
+    UINT descriptorIndexVB = CreateBufferSRV(&m_vertexBuffer, ARRAYSIZE(vertices), sizeof(vertices[0]));
+    ThrowIfFalse(descriptorIndexVB == descriptorIndexIB + 1, L"Vertex Buffer descriptor index must follow that of Index Buffer descriptor index!");
 }
 
 // Build acceleration structures needed for raytracing.
@@ -420,56 +437,77 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
     // Reset the command list for the acceleration structure construction.
     commandList->Reset(commandAllocator, nullptr);
 
-    D3D12_RAYTRACING_GEOMETRY_DESC geometryDesc;
-    geometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-    geometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
-    geometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
-    geometryDesc.Triangles.Transform3x4 = 0;
-    geometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-    geometryDesc.Triangles.VertexBuffer.StartAddress = m_vertexBuffer.resource->GetGPUVirtualAddress();
-    geometryDesc.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-    geometryDesc.Triangles.VertexCount = 24;
+    D3D12_RAYTRACING_GEOMETRY_DESC meshBaseGeometryDesc; // template for mesh instances
+    meshBaseGeometryDesc.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+    meshBaseGeometryDesc.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+    meshBaseGeometryDesc.Triangles.IndexFormat = DXGI_FORMAT_R16_UINT;
+    meshBaseGeometryDesc.Triangles.Transform3x4 = 0;
+    meshBaseGeometryDesc.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+    meshBaseGeometryDesc.Triangles.VertexBuffer.StartAddress = m_vertexBuffer.resource->GetGPUVirtualAddress();
+    meshBaseGeometryDesc.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+    meshBaseGeometryDesc.Triangles.VertexCount = 26;
 
-    D3D12_RAYTRACING_GEOMETRY_DESC geometry[2];
-    geometry[0] = geometryDesc;
+    D3D12_RAYTRACING_GEOMETRY_DESC geometry[3];
+    // walls
+    geometry[0] = meshBaseGeometryDesc;
     geometry[0].Triangles.IndexBuffer = m_indexBuffer.resource->GetGPUVirtualAddress();
     geometry[0].Triangles.IndexCount = 30;
 
-    geometry[1] = geometryDesc;
+    // light
+    geometry[1] = meshBaseGeometryDesc;
     geometry[1].Triangles.IndexBuffer = geometry[0].Triangles.IndexBuffer + geometry[0].Triangles.IndexCount*sizeof(Index);
     geometry[1].Triangles.IndexCount = 6;
+
+    // sphere
+    geometry[2].Type  = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS;
+    geometry[2].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+    geometry[2].AABBs.AABBs.StartAddress = m_vertexBuffer.resource->GetGPUVirtualAddress() + 24*sizeof(Vertex);
+    geometry[2].AABBs.AABBs.StrideInBytes = 0;
+    geometry[2].AABBs.AABBCount = 1;
 
     // Get required sizes for an acceleration structure.
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
 
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC bottomLevelBuildDesc = {};
-    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &bottomLevelInputs = bottomLevelBuildDesc.Inputs;
-    bottomLevelInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-    bottomLevelInputs.Flags = buildFlags;
-    bottomLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    bottomLevelInputs.NumDescs = 2;
-    bottomLevelInputs.pGeometryDescs = geometry;
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC meshBuildDesc = {};
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &meshInputs = meshBuildDesc.Inputs;
+    meshInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+    meshInputs.Flags = buildFlags;
+    meshInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    meshInputs.NumDescs = 2;
+    meshInputs.pGeometryDescs = geometry + 0;
+
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC aabbBuildDesc = {};
+    D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &aabbInputs = aabbBuildDesc.Inputs;
+    aabbInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+    aabbInputs.Flags = buildFlags;
+    aabbInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    aabbInputs.NumDescs = 1;
+    aabbInputs.pGeometryDescs = geometry + 2;
 
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC topLevelBuildDesc = {};
     D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS &topLevelInputs = topLevelBuildDesc.Inputs;
-    topLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
-    topLevelInputs.Flags = buildFlags;
-    topLevelInputs.NumDescs = 1;
-    topLevelInputs.pGeometryDescs = nullptr;
     topLevelInputs.Type = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL;
+    topLevelInputs.Flags = buildFlags;
+    topLevelInputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
+    topLevelInputs.NumDescs = 2;
+    topLevelInputs.InstanceDescs = NULL;
 
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO topLevelPrebuildInfo;
     m_dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&topLevelInputs, &topLevelPrebuildInfo);
 
     ThrowIfFalse(topLevelPrebuildInfo.ResultDataMaxSizeInBytes > 0);
 
-    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO bottomLevelPrebuildInfo = {};
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO meshPrebuildInfo = {};
+    D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO aabbPrebuildInfo = {};
 
-    m_dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&bottomLevelInputs, &bottomLevelPrebuildInfo);
-    ThrowIfFalse(bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes > 0);
+    m_dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&meshInputs, &meshPrebuildInfo);
+    ThrowIfFalse(meshPrebuildInfo.ResultDataMaxSizeInBytes > 0);
+
+    m_dxrDevice->GetRaytracingAccelerationStructurePrebuildInfo(&aabbInputs, &aabbPrebuildInfo);
+    ThrowIfFalse(aabbPrebuildInfo.ResultDataMaxSizeInBytes > 0);
 
     ComPtr<ID3D12Resource> scratchResource;
-    AllocateUAVBuffer(device, max(topLevelPrebuildInfo.ScratchDataSizeInBytes, bottomLevelPrebuildInfo.ScratchDataSizeInBytes), &scratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
+    AllocateUAVBuffer(device, max(topLevelPrebuildInfo.ScratchDataSizeInBytes, meshPrebuildInfo.ScratchDataSizeInBytes), &scratchResource, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"ScratchResource");
 
     // Allocate resources for acceleration structures.
     // Acceleration structures can only be placed in resources that are created in the default heap (or custom heap equivalent).
@@ -481,24 +519,38 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
     {
         D3D12_RESOURCE_STATES initialResourceState = D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE;
 
-        AllocateUAVBuffer(device, bottomLevelPrebuildInfo.ResultDataMaxSizeInBytes, &m_bottomLevelAccelerationStructure, initialResourceState, L"BottomLevelAccelerationStructure");
+        AllocateUAVBuffer(device, meshPrebuildInfo.ResultDataMaxSizeInBytes, &m_meshAccelerationStructure, initialResourceState, L"MeshAccelerationStructure");
+        AllocateUAVBuffer(device, aabbPrebuildInfo.ResultDataMaxSizeInBytes, &m_aabbAccelerationStructure, initialResourceState, L"AABBAccelerationStructure");
         AllocateUAVBuffer(device, topLevelPrebuildInfo.ResultDataMaxSizeInBytes, &m_topLevelAccelerationStructure, initialResourceState, L"TopLevelAccelerationStructure");
     }
 
     ComPtr<ID3D12Resource> instanceDescs;
     {
-        D3D12_RAYTRACING_INSTANCE_DESC instanceDesc = {};
-        instanceDesc.Transform[0][0] = instanceDesc.Transform[1][1] = instanceDesc.Transform[2][2] = 1;
-        instanceDesc.InstanceMask = 1;
-        instanceDesc.InstanceContributionToHitGroupIndex = 0;
-        instanceDesc.AccelerationStructure = m_bottomLevelAccelerationStructure->GetGPUVirtualAddress();
-        AllocateUploadBuffer(device, &instanceDesc, sizeof(instanceDesc), &instanceDescs, L"InstanceDescs");
+        D3D12_RAYTRACING_INSTANCE_DESC instanceDescsTemp[2];
+
+        instanceDescsTemp[0].Transform[0][0] = instanceDescsTemp[0].Transform[1][1] = instanceDescsTemp[0].Transform[2][2] = 1;
+        instanceDescsTemp[0].InstanceMask = 1;
+        instanceDescsTemp[0].InstanceContributionToHitGroupIndex = 0;
+        instanceDescsTemp[0].AccelerationStructure = m_meshAccelerationStructure->GetGPUVirtualAddress();
+
+        instanceDescsTemp[1].Transform[0][0] = instanceDescsTemp[1].Transform[1][1] = instanceDescsTemp[1].Transform[2][2] = 1;
+        instanceDescsTemp[1].InstanceMask = 1;
+        instanceDescsTemp[1].InstanceContributionToHitGroupIndex = 2;
+        instanceDescsTemp[1].AccelerationStructure = m_aabbAccelerationStructure->GetGPUVirtualAddress();
+
+        AllocateUploadBuffer(device, &instanceDescsTemp, sizeof(instanceDescsTemp), &instanceDescs, L"InstanceDescs");
     }
 
-    // Bottom Level Acceleration Structure desc
+    // mesh Bottom Level Acceleration Structure desc
     {
-        bottomLevelBuildDesc.ScratchAccelerationStructureData = scratchResource->GetGPUVirtualAddress();
-        bottomLevelBuildDesc.DestAccelerationStructureData = m_bottomLevelAccelerationStructure->GetGPUVirtualAddress();
+        meshBuildDesc.ScratchAccelerationStructureData = scratchResource->GetGPUVirtualAddress();
+        meshBuildDesc.DestAccelerationStructureData = m_meshAccelerationStructure->GetGPUVirtualAddress();
+    }
+
+    // aabb Bottom Level Acceleration Structure desc
+    {
+        aabbBuildDesc.ScratchAccelerationStructureData = scratchResource->GetGPUVirtualAddress();
+        aabbBuildDesc.DestAccelerationStructureData = m_aabbAccelerationStructure->GetGPUVirtualAddress();
     }
 
     // Top Level Acceleration Structure desc
@@ -510,8 +562,10 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
 
     auto BuildAccelerationStructure = [&](auto* raytracingCommandList)
     {
-        raytracingCommandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
-        commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(m_bottomLevelAccelerationStructure.Get()));
+        raytracingCommandList->BuildRaytracingAccelerationStructure(&meshBuildDesc, 0, nullptr);
+        commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(m_meshAccelerationStructure.Get()));
+        raytracingCommandList->BuildRaytracingAccelerationStructure(&aabbBuildDesc, 0, nullptr);
+        commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(m_aabbAccelerationStructure.Get()));
         raytracingCommandList->BuildRaytracingAccelerationStructure(&topLevelBuildDesc, 0, nullptr);
     };
 
@@ -534,6 +588,7 @@ void D3D12RaytracingLibrarySubobjects::BuildShaderTables()
     void* missShaderIdentifier;
     void* lambertHitGroupShaderIdentifier;
     void* lightHitGroupShaderIdentifier;
+    void* dielectricSphereHitGroupShaderIdentifier;
 
     auto GetShaderIdentifiers = [&](auto* stateObjectProperties)
     {
@@ -541,6 +596,7 @@ void D3D12RaytracingLibrarySubobjects::BuildShaderTables()
         missShaderIdentifier = stateObjectProperties->GetShaderIdentifier(c_missShaderName);
         lambertHitGroupShaderIdentifier = stateObjectProperties->GetShaderIdentifier(c_lambertHitGroupName);
         lightHitGroupShaderIdentifier = stateObjectProperties->GetShaderIdentifier(c_lightHitGroupName);
+        dielectricSphereHitGroupShaderIdentifier = stateObjectProperties->GetShaderIdentifier(c_dielectricSphereHitGroupName);
     };
 
     // Get shader identifiers.
@@ -576,20 +632,26 @@ void D3D12RaytracingLibrarySubobjects::BuildShaderTables()
             GeometryConstantBuffer cb;
         } rootArguments;
 
-        UINT numShaderRecords = 2; // TODO: dynamic based on geometry description
+        UINT numShaderRecords = 3; // TODO: dynamic based on geometry description
         UINT shaderRecordSize = shaderIdentifierSize + sizeof(rootArguments);
         ShaderTable hitGroupShaderTable(device, numShaderRecords, shaderRecordSize, L"HitGroupShaderTable");
         // lambert shader
         {
-            rootArguments.cb.indexBufferOffset = 0;
+            rootArguments.cb.bufferIndexOffset = 0; // offset into index buffer
             ShaderRecord lambertShaderRecord(lambertHitGroupShaderIdentifier, shaderIdentifierSize, &rootArguments, sizeof(rootArguments));
             hitGroupShaderTable.push_back(lambertShaderRecord);
         }
         // light shader
         {
-            rootArguments.cb.indexBufferOffset = 30;
+            rootArguments.cb.bufferIndexOffset = 30; // offset into index buffer
             ShaderRecord lightShaderRecord(lightHitGroupShaderIdentifier, shaderIdentifierSize, &rootArguments, sizeof(rootArguments));
             hitGroupShaderTable.push_back(lightShaderRecord);
+        }
+        // dielectricSphere shader
+        {
+            rootArguments.cb.bufferIndexOffset = 25; // offset into vertex buffer
+            ShaderRecord dielectricSphereShaderRecord(dielectricSphereHitGroupShaderIdentifier, shaderIdentifierSize, &rootArguments, sizeof(rootArguments));
+            hitGroupShaderTable.push_back(dielectricSphereShaderRecord);
         }
         m_hitGroupShaderTable = hitGroupShaderTable.GetResource();
         m_hitGroupShaderTableStride = hitGroupShaderTable.GetShaderRecordSize();
@@ -730,7 +792,8 @@ void D3D12RaytracingLibrarySubobjects::ReleaseDeviceDependentResources()
     m_missShaderTable.Reset();
     m_hitGroupShaderTable.Reset();
 
-    m_bottomLevelAccelerationStructure.Reset();
+    m_meshAccelerationStructure.Reset();
+    m_aabbAccelerationStructure.Reset();
     m_topLevelAccelerationStructure.Reset();
 
 }

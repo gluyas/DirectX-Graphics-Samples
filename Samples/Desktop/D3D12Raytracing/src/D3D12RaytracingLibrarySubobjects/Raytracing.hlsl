@@ -27,7 +27,7 @@ GlobalRootSignature MyGlobalRootSignature =
 
 LocalRootSignature MyLocalRootSignature =
 {
-    "RootConstants( num32BitConstants = 4, b1 )"           // Cube constants
+    "RootConstants( num32BitConstants = 1, b1 )"           // Cube constants
 };
 
 TriangleHitGroup LambertHitGroup =
@@ -54,13 +54,30 @@ SubobjectToExportsAssociation  LightLocalRootSignatureAssociation =
     "LightHitGroup"          // export association
 };
 
+ProceduralPrimitiveHitGroup DielectricSphereHitGroup =
+{
+    "",
+    "DielectricSphereClosestHit",
+    "SphereIntersection"
+};
+
+SubobjectToExportsAssociation  DielectricSphereLocalRootSignatureAssociation =
+{
+    "MyLocalRootSignature",    // subobject name
+    "DielectricSphereHitGroup" // export association
+};
+
 RaytracingShaderConfig  MyShaderConfig =
 {
     32, // max payload size
     8   // max attribute size
 };
 
-typedef BuiltInTriangleIntersectionAttributes MyAttributes;
+typedef BuiltInTriangleIntersectionAttributes TriangleIntersectionAttributes;
+
+struct SphereIntersectionAttributes {
+    float Sign; // negative if the ray is exiting the sphere
+};
 
 struct RayPayload
 {
@@ -81,7 +98,7 @@ ByteAddressBuffer Indices : register(t1, space0);
 StructuredBuffer<Vertex> Vertices : register(t2, space0);
 
 ConstantBuffer<SceneConstantBuffer> g_sceneCB : register(b0);
-ConstantBuffer<GeometryConstantBuffer> g_geometryCB : register(b1);
+ConstantBuffer<GeometryConstantBuffer> l_geometryCB : register(b1);
 
 // Load three 16 bit indices from a byte addressed buffer.
 uint3 Load3x16BitIndices(uint offsetBytes)
@@ -129,10 +146,10 @@ float3 HitAttribute(float3 vertexAttribute[3], BuiltInTriangleIntersectionAttrib
         attr.barycentrics.y * (vertexAttribute[2] - vertexAttribute[0]);
 }
 
-inline Vertex HitInterpolatedVertexAttributes(MyAttributes attr) {
+inline Vertex HitInterpolatedVertexAttributes(TriangleIntersectionAttributes attr) {
     // Get the base index of the triangle's first 16 bit index.
     const uint INDEX_SIZE = 2;
-    uint baseIndex = (g_geometryCB.indexBufferOffset + 3*PrimitiveIndex())*INDEX_SIZE;
+    uint baseIndex = (l_geometryCB.bufferIndexOffset + 3*PrimitiveIndex())*INDEX_SIZE;
 
     // Load up 3 16 bit indices for the triangle.
     const uint3 indices = Load3x16BitIndices(baseIndex);
@@ -215,7 +232,7 @@ void MyRaygenShader()
 }
 
 [shader("closesthit")]
-void LambertClosestHit(inout RayPayload payload, in MyAttributes attr)
+void LambertClosestHit(inout RayPayload payload, in TriangleIntersectionAttributes attr)
 {
     Vertex hit = HitInterpolatedVertexAttributes(attr);
 
@@ -230,7 +247,7 @@ void LambertClosestHit(inout RayPayload payload, in MyAttributes attr)
 }
 
 [shader("closesthit")]
-void LightClosestHit(inout RayPayload payload, in MyAttributes attr)
+void LightClosestHit(inout RayPayload payload, in TriangleIntersectionAttributes attr)
 {
     Vertex hit = HitInterpolatedVertexAttributes(attr);
 
@@ -238,6 +255,98 @@ void LightClosestHit(inout RayPayload payload, in MyAttributes attr)
     payload.Scatter = 0;
     payload.Color   = max(0, -dot(hit.normal, WorldRayDirection())) * hit.color;
 }
+
+struct DielectricSphere {
+    float3 Position;
+    float  Radius;
+    float  RefractiveIndex;
+    float3 Color;
+};
+
+#define SPHERE_HIT_ENTER 0x00
+#define SPHERE_HIT_EXIT  0x01
+
+inline DielectricSphere LoadDielectricSphere() {
+    // TODO: verify this works for multiple procedural primitives
+    Vertex v = Vertices[l_geometryCB.bufferIndexOffset + PrimitiveIndex()];
+    DielectricSphere sphere;
+    sphere.Position        = v.position;
+    sphere.Radius          = v.normal.x;
+    sphere.RefractiveIndex = v.normal.y;
+    sphere.Color           = v.color;
+    return sphere;
+}
+
+[shader("intersection")]
+void SphereIntersection()
+{
+    DielectricSphere sphere = LoadDielectricSphere();
+
+    float3 rayOrigin    = WorldRayOrigin();
+    float3 rayDirection = WorldRayDirection();
+
+    float3 m = rayOrigin - sphere.Position;
+    float  b = dot(m, rayDirection);
+    float  c = dot(m, m) - sphere.Radius*sphere.Radius;
+
+    if (c > 0 && b > 0) return;
+
+    float d = b*b - c;
+    if (d < 0) return;
+
+    float e = sqrt(d);
+    float t = -b - e;
+    // TODO: respect face culling flags?
+    SphereIntersectionAttributes attr;
+    if (t >= 0) {
+        // if ((RayFlags() & RAY_FLAG_CULL_FRONT_FACING_TRIANGLES) == 0) return;
+        attr.Sign = 1;
+        ReportHit(t, SPHERE_HIT_ENTER, attr);
+    } else {
+        // if ((RayFlags() & RAY_FLAG_CULL_BACK_FACING_TRIANGLES)  == 0) return;
+        t = -b + e;
+        attr.Sign = -1;
+        ReportHit(t, SPHERE_HIT_EXIT, attr);
+    }
+}
+
+// TODO: make hit shaders independent of geometry type?
+[shader("closesthit")]
+void DielectricSphereClosestHit(inout RayPayload payload, in SphereIntersectionAttributes attr)
+{
+    DielectricSphere sphere = LoadDielectricSphere();
+
+    float3 hit    = HitWorldPosition();
+    float3 normal = normalize(hit - sphere.Position) * attr.Sign;
+    if (attr.Sign > 0) {
+        sphere.RefractiveIndex = 1 / sphere.RefractiveIndex;
+    }
+    float3 scatter = refract(WorldRayDirection(), normal, sphere.RefractiveIndex);
+    if (!any(scatter)) {
+        scatter = reflect(WorldRayDirection(), normal);
+    }
+
+    payload.T       = RayTCurrent();
+    payload.Scatter = scatter;
+    payload.Color   = sphere.Color;
+}
+
+// [shader("intersection")]
+// void SphereIntersection()
+// {
+//     SphereIntersectionAttributes attr;
+//     attr.Sign = 1;
+//     ReportHit(0.01, 0, attr);
+// }
+
+// [shader("closesthit")]
+// void DielectricSphereClosestHit(inout RayPayload payload, in SphereIntersectionAttributes attr)
+// {
+//     payload.T       = RayTCurrent();
+//     payload.Scatter = 0;
+//     payload.Color   = X3;
+// }
+
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
