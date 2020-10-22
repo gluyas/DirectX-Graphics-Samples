@@ -410,10 +410,12 @@ void D3D12RaytracingLibrarySubobjects::BuildGeometry()
         // TODO: including this in vertex buffer is really hacky!
 
         // 16-byte boundary: AABB (whole cube for now)
+        // AABB stride set to 0 so this is used for all the following spheres
         { XMFLOAT3(-1.0f, -1.0f, -1.0f), XMFLOAT3(1.0f, 1.0f, 1.0f), XMFLOAT3(0.0f, 0.0f, 0.0f) },
 
         // implicit sphere: { float3 position; float radius; float refractiveIndex; float _pad20; float3 color; }
-        { XMFLOAT3(0.25f, -0.4f, -0.25f), XMFLOAT3(0.4f, 1.5f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(0.25f, -0.4f, 0.25f), XMFLOAT3(0.4f, 1.5f, 0.0f), XMFLOAT3(1.0f, 1.0f, 1.0f) },
+        { XMFLOAT3(-0.35f, 0.1f, -0.3f), XMFLOAT3(0.5f, 1.5f, 0.0f), XMFLOAT3(0.0f, 0.7f, 1.0f) },
     };
 
     AllocateUploadBuffer(device, indices, sizeof(indices), &m_indexBuffer.resource);
@@ -463,7 +465,7 @@ void D3D12RaytracingLibrarySubobjects::BuildAccelerationStructures()
     geometry[2].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
     geometry[2].AABBs.AABBs.StartAddress = m_vertexBuffer.resource->GetGPUVirtualAddress() + 24*sizeof(Vertex);
     geometry[2].AABBs.AABBs.StrideInBytes = 0;
-    geometry[2].AABBs.AABBCount = 1;
+    geometry[2].AABBs.AABBCount = 2;
 
     // Get required sizes for an acceleration structure.
     D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS buildFlags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;

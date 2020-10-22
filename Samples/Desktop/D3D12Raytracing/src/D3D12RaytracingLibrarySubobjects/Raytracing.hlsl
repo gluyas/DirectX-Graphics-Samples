@@ -202,7 +202,7 @@ void MyRaygenShader()
     float3 pixelColor = 0;
 
     const uint SAMPLES = 256;
-    const uint BOUNCES = 8;
+    const uint BOUNCES = 6;
     for (uint s = 0; s < SAMPLES; s++) {
         GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, 0.5*min(1, s), ray.Origin, ray.Direction);
 
@@ -267,7 +267,6 @@ struct DielectricSphere {
 #define SPHERE_HIT_EXIT  0x01
 
 inline DielectricSphere LoadDielectricSphere() {
-    // TODO: verify this works for multiple procedural primitives
     Vertex v = Vertices[l_geometryCB.bufferIndexOffset + PrimitiveIndex()];
     DielectricSphere sphere;
     sphere.Position        = v.position;
@@ -305,9 +304,19 @@ void SphereIntersection()
     } else {
         // if ((RayFlags() & RAY_FLAG_CULL_BACK_FACING_TRIANGLES)  == 0) return;
         t = -b + e;
-        attr.Sign = -1;
-        ReportHit(t, SPHERE_HIT_EXIT, attr);
+        if (t >= 0) {
+            attr.Sign = -1;
+            ReportHit(t, SPHERE_HIT_EXIT, attr);
+        }
     }
+}
+
+float Schlick(float cosine, float refractveIndex)
+{
+	float r0 = (1 - refractveIndex) / (1 + refractveIndex);
+	r0 *= r0;
+    float b = 1 - cosine;
+	return r0 + (1 - r0) * b*b*b*b*b;
 }
 
 // TODO: make hit shaders independent of geometry type?
@@ -317,42 +326,32 @@ void DielectricSphereClosestHit(inout RayPayload payload, in SphereIntersectionA
     DielectricSphere sphere = LoadDielectricSphere();
 
     float3 hit    = HitWorldPosition();
-    float3 normal = normalize(hit - sphere.Position) * attr.Sign;
-    if (attr.Sign > 0) {
-        sphere.RefractiveIndex = 1 / sphere.RefractiveIndex;
-    }
-    float3 scatter = refract(WorldRayDirection(), normal, sphere.RefractiveIndex);
-    if (!any(scatter)) {
-        scatter = reflect(WorldRayDirection(), normal);
+    float3 ray    = WorldRayDirection();
+    float3 normal = (hit - sphere.Position) / sphere.Radius * attr.Sign;
+    float  n      = sphere.RefractiveIndex;
+    if (attr.Sign > 0) n = 1/n;
+    float fresnel = Schlick(-dot(normal, ray), n);
+
+    float3 scatter;
+    if (Random01(payload.RngSeed) < fresnel) {
+        scatter = reflect(ray, normal);
+    } else {
+        scatter = refract(ray, normal, n);
+        if (!any(scatter)) {
+            scatter = reflect(ray, normal);
+        }
     }
 
     payload.T       = RayTCurrent();
     payload.Scatter = scatter;
-    payload.Color   = sphere.Color;
+    payload.Color   = 1; // TODO: absorption
 }
-
-// [shader("intersection")]
-// void SphereIntersection()
-// {
-//     SphereIntersectionAttributes attr;
-//     attr.Sign = 1;
-//     ReportHit(0.01, 0, attr);
-// }
-
-// [shader("closesthit")]
-// void DielectricSphereClosestHit(inout RayPayload payload, in SphereIntersectionAttributes attr)
-// {
-//     payload.T       = RayTCurrent();
-//     payload.Scatter = 0;
-//     payload.Color   = X3;
-// }
-
 
 [shader("miss")]
 void MyMissShader(inout RayPayload payload)
 {
     payload.Scatter = 0;
-    payload.Color   = 0;
+    payload.Color   = float3(0.0, 0.0, 0.2);
     payload.T       = INFINITY;
 }
 
