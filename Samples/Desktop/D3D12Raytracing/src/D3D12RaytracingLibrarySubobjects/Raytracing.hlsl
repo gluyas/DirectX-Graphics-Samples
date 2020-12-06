@@ -193,7 +193,7 @@ inline void GenerateCameraRay(inout uint seed, uint2 index, float spread, out fl
 void MyRaygenShader()
 {
     RayPayload payload;
-    payload.RngSeed = Hash(DispatchRaysIndex().xy);
+    payload.RngSeed = Hash(uint3(g_sceneCB.frameAccumulator, DispatchRaysIndex().xy));
 
     RayDesc ray;
     ray.TMin = 0.0001;
@@ -202,7 +202,7 @@ void MyRaygenShader()
     float3 pixelColor = 0;
 
     const uint SAMPLES = 16;
-    const uint BOUNCES = 6;
+    const uint BOUNCES = 8;
     for (uint s = 0; s < SAMPLES; s++) {
         GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, 0.5*min(1, s), ray.Origin, ray.Direction);
 
@@ -227,7 +227,13 @@ void MyRaygenShader()
     }
     pixelColor /= SAMPLES;
 
-    // Write the raytraced color to the output texture.
+    // Accumulate the raytraced color to the output texture
+    if (g_sceneCB.frameAccumulator != 1) {
+        float4 lastPixelColor = RenderTarget[DispatchRaysIndex().xy];
+        float  reciprocal     = 1.0 / g_sceneCB.frameAccumulator;
+        pixelColor *= reciprocal;
+        pixelColor += (1.0 - reciprocal)*lastPixelColor;
+    }
     RenderTarget[DispatchRaysIndex().xy] = float4(pixelColor, 1.0);
 }
 

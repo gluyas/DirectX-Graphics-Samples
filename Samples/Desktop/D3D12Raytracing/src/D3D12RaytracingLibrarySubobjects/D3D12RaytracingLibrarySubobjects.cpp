@@ -159,14 +159,8 @@ void D3D12RaytracingLibrarySubobjects::InitializeScene()
         XMFLOAT4 lightAmbientColor;
         XMFLOAT4 lightDiffuseColor;
 
-        lightPosition = XMFLOAT4(0.0f, 1.8f, -3.0f, 0.0f);
-        m_sceneCB[frameIndex].lightPosition = XMLoadFloat4(&lightPosition);
-
         lightAmbientColor = XMFLOAT4(0.0f, 0.0f, 0.0f, 1.0f);
         m_sceneCB[frameIndex].lightAmbientColor = XMLoadFloat4(&lightAmbientColor);
-
-        lightDiffuseColor = XMFLOAT4(0.5f, 0.5f, 0.5f, 1.0f);
-        m_sceneCB[frameIndex].lightDiffuseColor = XMLoadFloat4(&lightDiffuseColor);
     }
 
     // Apply the initial values to all frames' buffer instances.
@@ -718,29 +712,28 @@ void D3D12RaytracingLibrarySubobjects::OnUpdate()
     auto prevFrameIndex = m_deviceResources->GetPreviousFrameIndex();
 
     // Position the camera
-    {
-        static float azimuth = 0.0;
-        ImGui::SliderAngle("azimuth", &azimuth);
+    bool cameraUpdate = false;
 
-        static float elevation = 0.0;
-        ImGui::SliderAngle("elevation", &elevation, -85, 85);
+    static float azimuth = XMConvertToRadians(180);
+    cameraUpdate |= ImGui::SliderAngle("azimuth", &azimuth);
 
-        static float distance = 5.0;
-        ImGui::SliderFloat("distance", &distance, 0.05, 5.0);
+    static float elevation = 0.0;
+    cameraUpdate |= ImGui::SliderAngle("elevation", &elevation, -85, 85);
 
-        XMMATRIX rotate = XMMatrixRotationRollPitchYaw(-elevation, -azimuth, 0.0);
-        m_eye = XMVector3Transform({ 0.0f, 0.0f, distance, 1.0f }, rotate);
-        UpdateCameraMatrices();
+    static float distance = 4.0;
+    cameraUpdate |= ImGui::SliderFloat("distance", &distance, 0.05, 6.0);
+
+    XMMATRIX rotate = XMMatrixRotationRollPitchYaw(-elevation, -azimuth, 0.0);
+    m_eye = XMVector3Transform({ 0.0f, 0.0f, distance, 1.0f }, rotate);
+    UpdateCameraMatrices();
+
+    static UINT frameAccumulator = 1;
+    if (cameraUpdate) {
+        frameAccumulator = 1;
+    } else {
+        frameAccumulator += 1;
     }
-
-    // Rotate the second light around Y axis.
-    {
-        float secondsToRotateAround = 8.0f;
-        float angleToRotateBy = -360.0f * (elapsedTime / secondsToRotateAround);
-        XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(angleToRotateBy));
-        const XMVECTOR& prevLightPosition = m_sceneCB[prevFrameIndex].lightPosition;
-        m_sceneCB[frameIndex].lightPosition = XMVector3Transform(prevLightPosition, rotate);
-    }
+    m_sceneCB[frameIndex].frameAccumulator = frameAccumulator;
 
     ImGui::End();
     ImGui::EndFrame();
