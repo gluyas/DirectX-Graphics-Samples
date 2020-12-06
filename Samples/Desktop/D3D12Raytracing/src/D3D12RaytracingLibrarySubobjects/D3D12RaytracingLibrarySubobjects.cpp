@@ -706,8 +706,10 @@ void D3D12RaytracingLibrarySubobjects::OnUpdate()
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    static bool showDemoWindow = true;
-    if (showDemoWindow) ImGui::ShowDemoWindow(&showDemoWindow);
+    // static bool showDemoWindow = true;
+    // if (showDemoWindow) ImGui::ShowDemoWindow(&showDemoWindow);
+
+    ImGui::Begin("Camera Control");
 
     m_timer.Tick();
     CalculateFrameStats();
@@ -715,14 +717,19 @@ void D3D12RaytracingLibrarySubobjects::OnUpdate()
     auto frameIndex = m_deviceResources->GetCurrentFrameIndex();
     auto prevFrameIndex = m_deviceResources->GetPreviousFrameIndex();
 
-    // Rotate the camera around Y axis.
+    // Position the camera
     {
-        float secondsToRotateAround = 24.0f;
-        float angleToRotateBy = 360.0f * (elapsedTime / secondsToRotateAround);
-        XMMATRIX rotate = XMMatrixRotationY(XMConvertToRadians(angleToRotateBy));
-        m_eye = XMVector3Transform(m_eye, rotate);
-        m_up = XMVector3Transform(m_up, rotate);
-        m_at = XMVector3Transform(m_at, rotate);
+        static float azimuth = 0.0;
+        ImGui::SliderAngle("azimuth", &azimuth);
+
+        static float elevation = 0.0;
+        ImGui::SliderAngle("elevation", &elevation, -85, 85);
+
+        static float distance = 5.0;
+        ImGui::SliderFloat("distance", &distance, 0.05, 5.0);
+
+        XMMATRIX rotate = XMMatrixRotationRollPitchYaw(-elevation, -azimuth, 0.0);
+        m_eye = XMVector3Transform({ 0.0f, 0.0f, distance, 1.0f }, rotate);
         UpdateCameraMatrices();
     }
 
@@ -735,6 +742,7 @@ void D3D12RaytracingLibrarySubobjects::OnUpdate()
         m_sceneCB[frameIndex].lightPosition = XMVector3Transform(prevLightPosition, rotate);
     }
 
+    ImGui::End();
     ImGui::EndFrame();
 }
 
