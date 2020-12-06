@@ -10,6 +10,10 @@
 //*********************************************************
 
 #include "stdafx.h"
+
+#include "imgui_impl_win32.h"
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
 #include "Win32Application.h"
 #include "DXSampleHelper.h"
 
@@ -184,6 +188,9 @@ void Win32Application::SetWindowZorderToTopMost(bool setToTopMost)
 // Main message handler for the sample.
 LRESULT CALLBACK Win32Application::WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    if (ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam))
+        return true;
+
     DXSample* pSample = reinterpret_cast<DXSample*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
 
     switch (message)

@@ -10,6 +10,11 @@
 //*********************************************************
 
 #include "stdafx.h"
+
+#include "imgui.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx12.h"
+
 #include "D3D12RaytracingLibrarySubobjects.h"
 #include "DirectXRaytracingHelper.h"
 #include "CompiledShaders\Raytracing.hlsl.h"
@@ -75,6 +80,39 @@ void D3D12RaytracingLibrarySubobjects::OnInit()
 
     CreateDeviceDependentResources();
     CreateWindowSizeDependentResources();
+
+    // Setup Dear ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+
+    // Setup Dear ImGui style
+    ImGui::StyleColorsDark();
+    //ImGui::StyleColorsClassic();
+
+    // Setup Platform/Renderer backends
+    ImGui_ImplWin32_Init(Win32Application::GetHwnd());
+    ImGui_ImplDX12_Init(m_deviceResources->GetD3DDevice(), FrameCount,
+        DXGI_FORMAT_R8G8B8A8_UNORM, m_descriptorHeap.Get(),
+        CD3DX12_CPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetCPUDescriptorHandleForHeapStart(), (UINT)3, m_descriptorSize),
+        CD3DX12_GPU_DESCRIPTOR_HANDLE(m_descriptorHeap->GetGPUDescriptorHandleForHeapStart(), (UINT)3, m_descriptorSize));
+
+    // Load Fonts
+    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
+    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
+    // - If the file cannot be loaded, the function will return NULL. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
+    // - The fonts will be rasterized at a given size (w/ oversampling) and stored into a texture when calling ImFontAtlas::Build()/GetTexDataAsXXXX(), which ImGui_ImplXXXX_NewFrame below will call.
+    // - Read 'docs/FONTS.md' for more instructions and details.
+    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
+    //io.Fonts->AddFontDefault();
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Roboto-Medium.ttf", 16.0f);
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf", 15.0f);
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/DroidSans.ttf", 16.0f);
+    //io.Fonts->AddFontFromFileTTF("../../misc/fonts/ProggyTiny.ttf", 10.0f);
+    //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesJapanese());
+    //IM_ASSERT(font != NULL);
 }
 
 // Update camera matrices passed into the shader.
@@ -663,6 +701,14 @@ void D3D12RaytracingLibrarySubobjects::BuildShaderTables()
 // Update frame-based values.
 void D3D12RaytracingLibrarySubobjects::OnUpdate()
 {
+    // Start the Dear ImGui frame
+    ImGui_ImplDX12_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+
+    static bool showDemoWindow = true;
+    if (showDemoWindow) ImGui::ShowDemoWindow(&showDemoWindow);
+
     m_timer.Tick();
     CalculateFrameStats();
     float elapsedTime = static_cast<float>(m_timer.GetElapsedSeconds());
@@ -688,6 +734,8 @@ void D3D12RaytracingLibrarySubobjects::OnUpdate()
         const XMVECTOR& prevLightPosition = m_sceneCB[prevFrameIndex].lightPosition;
         m_sceneCB[frameIndex].lightPosition = XMVector3Transform(prevLightPosition, rotate);
     }
+
+    ImGui::EndFrame();
 }
 
 void D3D12RaytracingLibrarySubobjects::DoRaytracing()
@@ -826,6 +874,22 @@ void D3D12RaytracingLibrarySubobjects::OnRender()
     DoRaytracing();
     CopyRaytracingOutputToBackbuffer();
 
+    /* render imgui */ {
+        auto commandList   = m_deviceResources->GetCommandList();
+        auto renderTarget  = m_deviceResources->GetRenderTarget();
+
+        D3D12_RESOURCE_BARRIER barrier = {};
+        barrier = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
+        commandList->ResourceBarrier(1, &barrier);
+        commandList->OMSetRenderTargets(1, &m_deviceResources->GetRenderTargetView(), FALSE, NULL);
+        // NOTE: ensure ImGui descriptor heap is set
+        ImGui::Render();
+        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+
+        barrier = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
+        commandList->ResourceBarrier(1, &barrier);
+    }
+
     m_deviceResources->Present(D3D12_RESOURCE_STATE_PRESENT);
 }
 
@@ -833,6 +897,11 @@ void D3D12RaytracingLibrarySubobjects::OnDestroy()
 {
     // Let GPU finish before releasing D3D resources.
     m_deviceResources->WaitForGpu();
+
+    ImGui_ImplDX12_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+
     OnDeviceLost();
 }
 

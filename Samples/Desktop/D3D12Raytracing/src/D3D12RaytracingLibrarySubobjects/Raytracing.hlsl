@@ -201,7 +201,7 @@ void MyRaygenShader()
 
     float3 pixelColor = 0;
 
-    const uint SAMPLES = 256;
+    const uint SAMPLES = 16;
     const uint BOUNCES = 6;
     for (uint s = 0; s < SAMPLES; s++) {
         GenerateCameraRay(payload.RngSeed, DispatchRaysIndex().xy, 0.5*min(1, s), ray.Origin, ray.Direction);
